@@ -218,7 +218,7 @@ This is the same fundamental separation used in larger robotic control systems.
 | M3 | Audio output | Play synthesized speech | ✅ Done. Speech from `say.py` plays cleanly through the MAX98357A and speaker, 0 dropouts; boot volume 50%. Lip sync timing still to check by eye |
 | M4 | Audio input | Record microphone audio | ✅ Done. INMP441 streams 16 kHz audio to the PC with no gaps, also while the robot speaks; `tools/record.py` saves it as WAV and voice plays back clearly. Gain 18 dB |
 | M5 | Python communication | Send commands and receive telemetry | ✅ Done. `backend/` package: `Robot` class with reply matching, telemetry, audio in and out; 14 tests on a fake robot; demo and a 60 s soak on the robot with 0 lost or wrong replies |
-| M6 | Initial AI integration | Hold a conversation with coordinated expressions | ⬜ Not started |
+| M6 | Initial AI integration | Hold a conversation with coordinated expressions | 🟡 In progress: local speech recognition, OpenAI replies, Piper voice, expressions (plan below) |
 | M7 | Servo control | Independently command three servos | 🟡 Firmware written and flashed; waiting on PCA9685 wiring to test with real servos |
 | M8 | Motion trajectories | Smooth, bounded servo movements | 🟡 Trajectory planner prototyped and tested in `sim/`; not yet ported to firmware |
 | M9 | Final AI integration | Hold a conversation with coordinated expressions and motion | ⬜ Not started |
@@ -227,7 +227,7 @@ This is the same fundamental separation used in larger robotic control systems.
 
 **Next steps**
 
-1. Start M6 (initial AI integration). While the robot talks, check the mouth moves in time with the voice (last open M3 item).
+1. Finish M6 (plan below). While the robot talks, check the mouth moves in time with the voice (last open M3 item).
 2. Decide on 240 MHz CPU, and on 16 MB flash (the chip reports 16 MB).
 3. For M7 later: wire the PCA9685 and servos (see `firmware/README.md`), check `i2cscan` finds the board, then command each servo.
 
@@ -421,6 +421,66 @@ pip install -r backend/requirements.txt
 python3 -m pytest backend/tests
 python3 -m backend.main /dev/ttyACM0            # demo
 python3 -m backend.main /dev/ttyACM0 --soak 60  # 60 s of rapid commands
+```
+
+#### M6 — Initial AI integration
+
+Talk to the robot and it answers out loud, with the face following along: listening while you talk, thinking while it works out a reply, then a mood that fits what it says.
+
+**One turn**
+
+| Step | Where | How |
+|---|---|---|
+| 1. Hear you | PC | Detects the start and end of speech from the mic loudness (adaptive noise floor). Face → `listening` |
+| 2. Voice → text | PC | faster-whisper, small English model, int8 on the CPU. Face → `thinking` |
+| 3. Text → reply | OpenAI | Responses API, streamed, with the recent conversation as context |
+| 4. Reply → voice | PC | Piper (as in M3), one sentence at a time, so speaking starts after the first sentence |
+| 5. Face | Robot | The reply starts with a mood tag (`[happy]`, `[sad]`, …) that sets the expression; the mouth follows the voice (M3 lip sync); back to `neutral` afterwards |
+
+**Design**
+
+- `backend/audio/listener.py`: start/end-of-speech detection on 20 ms mic blocks, with pre-roll so the first syllable isn't cut. Pure code, no threads, so it is easy to test.
+- `backend/audio/stt.py`, `backend/audio/tts.py`: faster-whisper and Piper. Piper uses the voice already downloaded into `firmware/tools/voices/`.
+- `backend/ai/openai_client.py`: streams replies and keeps the last turns as history. `backend/ai/personality.py`: the system prompt (a friendly desk robot; one to three short spoken sentences; no lists, emoji or markdown) and the moods.
+- `backend/ai/conversation.py`: the loop. Mic blocks go through a queue so the serial reader never waits. A worker turns reply sentences into audio while the previous sentence plays.
+- Echo: mic blocks are ignored while the robot thinks and speaks, and for 0.3 s after.
+- The robot is called **Mochi**, and talks in sessions (`backend/ai/wake_word.py`):
+  - Asleep (`sleepy` face): every sentence is transcribed on the PC for free, and only one with "Mochi" in it wakes the robot. Nothing else is sent anywhere.
+  - "Hey Mochi!" on its own gets a built-in greeting; "Hey Mochi, what's …?" wakes it and answers the question. Each session starts a fresh conversation.
+  - Awake, it answers everything, until "Bye bye Mochi" (or goodbye, good night, see you) gets a built-in goodbye and puts it back to sleep, or nobody speaks for 2 minutes and it naps.
+  - Speech recognition is nudged towards the name (faster-whisper `hotwords`), and common misspellings (Mochie, Moochi, …) count.
+  - `AIBOT_NAME` and `AIBOT_IDLE_TIMEOUT_S` in `.env` change the name and nap time; `--always-answer` never sleeps.
+- The system prompt includes facts about how the robot is built (body, what it can't do yet, where speech recognition, replies and the voice run, and how to change them), so it can answer questions about itself.
+- Settings and the OpenAI API key come from a `.env` file in the repository root, which git ignores.
+- `AIBOT_VOICE` in `.env` (or `--voice`) picks another Piper voice, e.g. `en_US-amy-medium`; it is downloaded into `firmware/tools/voices/` on first use. Samples: https://rhasspy.github.io/piper-samples/
+- Latency target: under about 3 s from the end of your speech to the first word of the reply. Each turn prints its timings.
+- Speech recognition, the AI and speech synthesis are passed in as objects, so tests use stand-ins with the M5 fake robot.
+
+**Progress**
+
+- [x] Speech detection, speech recognition, speech synthesis
+- [x] OpenAI client and personality
+- [x] Conversation loop with expressions and echo handling
+- [x] Tests without hardware
+- [x] OpenAI key in `.env`; pick the default model (`gpt-5.4-mini` with reasoning off)
+- [x] Sessions: "Hey Mochi" to start, "Bye bye Mochi" or 2 minutes of silence to end; only questions in a session cost anything
+- [ ] Conversation on the robot with sessions
+- [x] Conversation on the robot; measure latency (first turn: text 1.1 s and first word 2.7 s after you stop, plus the 0.7 s of silence that marks the end)
+- [ ] Mouth moves in time with the voice (open since M3)
+
+**Bench findings (2026-10-28)**
+
+- Speech recognition on this PC (4 cores, no GPU): `base.en` transcribes 5–6 s of speech in about 0.9 s; `small.en` takes about 3 s and was no more accurate on the bench recordings, so `base.en` is the default. Both are English-only.
+- Time to the first words of a reply, with the robot's prompt: `gpt-4o-mini` 0.70 s, `gpt-4.1-mini` 0.82 s, `gpt-5.4-nano` 0.55 s, `gpt-5.4-mini` 0.63 s, `gpt-5.5` 0.82 s (GPT-5 models with reasoning off). `gpt-5.4-mini` gave the most natural short replies. `gpt-4.1-nano` is retired.
+- Whisper writes "You" for some non-speech sounds (here, probably the crack when the board resets). While Mochi is asleep these are ignored; during a session they would still be answered.
+- The OpenAI client's HTTP layer needs `brotli` 1.2 or newer; Ubuntu's 1.0.9 breaks every request. It also pulls in an `anyio` whose pytest plugin needs pytest 8. Both are in `backend/requirements.txt`.
+
+**Checks**
+
+```bash
+pip install -r backend/requirements.txt
+python3 -m pytest backend/tests
+python3 -m backend.chat /dev/ttyACM0            # "Hey Mochi!" to start, "Bye bye Mochi!" to end
 ```
 
 After M9, we implement autonomous behaviors.

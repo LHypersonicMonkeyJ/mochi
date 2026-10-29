@@ -37,6 +37,7 @@ class FakeRobot:
 
         # mic stream
         self.mic_skip: set[int] = set()  # sequence numbers to leave out
+        self.mic_source = None  # optional fn(seq) -> 320 int16 samples; default: the seq number
         self._mic_on = threading.Event()
         self._mic_seq = 0
         threading.Thread(target=self._mic_loop, daemon=True).start()
@@ -148,7 +149,10 @@ class FakeRobot:
             seq = self._mic_seq
             self._mic_seq += 1
             if seq not in self.mic_skip:
-                block[:] = seq  # each block carries its own number, so tests can check order
+                if self.mic_source:
+                    block[:] = self.mic_source(seq)
+                else:
+                    block[:] = seq  # each block carries its own number, so tests can check order
                 self.emit({"type": "mic", "seq": seq, "data": base64.b64encode(block.tobytes()).decode()})
             time.sleep(0.02)
 
