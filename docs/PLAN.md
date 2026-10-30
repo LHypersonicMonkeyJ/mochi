@@ -215,21 +215,20 @@ This is the same fundamental separation used in larger robotic control systems.
 |---|---|---|---|
 | M1 | ESP32 development environment | Flash firmware and read serial logs | ✅ Done. ESP-IDF v6.1 installed; firmware boots, streams telemetry and answers commands on the board |
 | M2 | LCD interface | Animated eyes and expressions | ✅ Done. Animated face (eyes and mouth) at 30 fps: blinks, idle glances, eased expression changes, test talking mouth; `expr`/`look`/`blink`/`eyes`/`talk` commands. 80 MHz SPI, 15 ms/frame |
-| M3 | Audio output | Play synthesized speech | ✅ Done. Speech from `say.py` plays cleanly through the MAX98357A and speaker, 0 dropouts; boot volume 50%. Lip sync timing still to check by eye |
+| M3 | Audio output | Play synthesized speech | ✅ Done. Speech from `say.py` plays cleanly through the MAX98357A and speaker, 0 dropouts; boot volume 50%. Lip sync checked by eye in M6: the mouth moves in time with the voice |
 | M4 | Audio input | Record microphone audio | ✅ Done. INMP441 streams 16 kHz audio to the PC with no gaps, also while the robot speaks; `tools/record.py` saves it as WAV and voice plays back clearly. Gain 18 dB |
 | M5 | Python communication | Send commands and receive telemetry | ✅ Done. `backend/` package: `Robot` class with reply matching, telemetry, audio in and out; 14 tests on a fake robot; demo and a 60 s soak on the robot with 0 lost or wrong replies |
-| M6 | Initial AI integration | Hold a conversation with coordinated expressions | 🟡 In progress: local speech recognition, OpenAI replies, Piper voice, expressions (plan below) |
+| M6 | Initial AI integration | Hold a conversation with coordinated expressions | ✅ Done. Local speech recognition, OpenAI replies, Piper voice, expressions; "Hey Mochi" sessions and lip sync checked on the robot |
 | M7 | Servo control | Independently command three servos | 🟡 Firmware written and flashed; waiting on PCA9685 wiring to test with real servos |
 | M8 | Motion trajectories | Smooth, bounded servo movements | 🟡 Trajectory planner prototyped and tested in `sim/`; not yet ported to firmware |
 | M9 | Final AI integration | Hold a conversation with coordinated expressions and motion | ⬜ Not started |
 
-*Status as of 2026-10-28. Servo work (M7, M8) now comes after initial AI integration (M6), and M9 adds motion to the conversation; the servo firmware already written stays in the tree.*
+*Status as of 2026-10-29. Servo work (M7, M8) now comes after initial AI integration (M6), and M9 adds motion to the conversation; the servo firmware already written stays in the tree.*
 
 **Next steps**
 
-1. Finish M6 (plan below). While the robot talks, check the mouth moves in time with the voice (last open M3 item).
-2. Decide on 240 MHz CPU, and on 16 MB flash (the chip reports 16 MB).
-3. For M7 later: wire the PCA9685 and servos (see `firmware/README.md`), check `i2cscan` finds the board, then command each servo.
+1. Decide on 240 MHz CPU, and on 16 MB flash (the chip reports 16 MB).
+2. For M7: wire the PCA9685 and servos (see `firmware/README.md`), check `i2cscan` finds the board, then command each servo.
 
 #### M2 — LCD interface
 
@@ -464,9 +463,9 @@ Talk to the robot and it answers out loud, with the face following along: listen
 - [x] Tests without hardware
 - [x] OpenAI key in `.env`; pick the default model (`gpt-5.4-mini` with reasoning off)
 - [x] Sessions: "Hey Mochi" to start, "Bye bye Mochi" or 2 minutes of silence to end; only questions in a session cost anything
-- [ ] Conversation on the robot with sessions
+- [x] Conversation on the robot with sessions
 - [x] Conversation on the robot; measure latency (first turn: text 1.1 s and first word 2.7 s after you stop, plus the 0.7 s of silence that marks the end)
-- [ ] Mouth moves in time with the voice (open since M3)
+- [x] Mouth moves in time with the voice (open since M3)
 
 **Bench findings (2026-10-28)**
 
@@ -474,6 +473,14 @@ Talk to the robot and it answers out loud, with the face following along: listen
 - Time to the first words of a reply, with the robot's prompt: `gpt-4o-mini` 0.70 s, `gpt-4.1-mini` 0.82 s, `gpt-5.4-nano` 0.55 s, `gpt-5.4-mini` 0.63 s, `gpt-5.5` 0.82 s (GPT-5 models with reasoning off). `gpt-5.4-mini` gave the most natural short replies. `gpt-4.1-nano` is retired.
 - Whisper writes "You" for some non-speech sounds (here, probably the crack when the board resets). While Mochi is asleep these are ignored; during a session they would still be answered.
 - The OpenAI client's HTTP layer needs `brotli` 1.2 or newer; Ubuntu's 1.0.9 breaks every request. It also pulls in an `anyio` whose pytest plugin needs pytest 8. Both are in `backend/requirements.txt`.
+
+**Bench findings (2026-10-29)**
+
+- Sessions on the robot work: speech without the name is ignored while asleep; "Hey Mochi!" gets the greeting; "Hey Mochi, what's your name?" wakes it and answers (first word 2.7 s); "Bye bye Mochi!" and 2 minutes of silence both put it to sleep.
+- The mouth moves in time with the voice.
+- During a session, background voices and noise get answered: a misheard sentence (probably a TV) and a bare "." both got replies.
+- One transcription of 1.4 s of noise took 9.3 s instead of the usual 1.1 s, probably faster-whisper retrying at higher temperatures when it isn't confident.
+- A long first sentence delays the first word (4.1 s for a reply about the Moon's distance), because each sentence is synthesized whole before it plays.
 
 **Checks**
 
