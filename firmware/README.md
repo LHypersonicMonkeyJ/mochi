@@ -82,7 +82,8 @@ build-host/face_preview /tmp/faces   # one PNG per expression, plus sheet, sheet
 | GPIO 8 | SDA |
 | GPIO 9 | SCL |
 
-- **Servo power:** connect the 5 V 5 A supply to the PCA9685's V+ screw terminal. Don't power the servos from the ESP32's 5V pin.
+- **Servo power:** connect the 5 V 5 A supply to the **V+ pin on the PCA9685's side header**, not the screw terminal. On this board the terminal reads 5 V but doesn't power the servo rows (likely a faulty reverse-polarity protection part). To diagnose, measure V+ to GND on a servo header row, not at the terminal. Don't power the servos from the ESP32's 5V pin.
+- **Polarity:** the side V+ pin skips the reverse-polarity protection, so double-check + and − before powering up. Use thick wires.
 - **Ground:** the supply ground and the ESP32 ground must be connected.
 - **Channels:** body yaw on 0, head yaw on 1, head pitch on 2.
 - **Changing pins or address:** use `idf.py menuconfig` → *aibot motion*.
@@ -139,7 +140,7 @@ python3 tools/say.py /dev/ttyACM0 --wav hello.wav        # hear it back on the r
 | `status` | one `telemetry` message immediately. Includes `fps` (animation rate), `drawn_fps` (frames actually redrawn), `frame_us` (draw time), `audio_ms` (audio queued), `dropouts` (times audio ran dry mid-stream since boot), `mic_peak` (loudest mic sample since the last report, 0–1) and `mic_overruns` (mic blocks lost) |
 | `rate <ms>` | sets the telemetry period (100–60000 ms), replies `{"type":"ack","cmd":"rate","period_ms":…}` |
 | `reboot` | `{"type":"ack","cmd":"reboot"}`, then restarts |
-| `i2cscan` | `{"type":"i2cscan","found":[64,112]}`: decimal addresses (a PCA9685 shows as 64 = 0x40, plus 112 = 0x70 for its all-call address) |
+| `i2cscan` | `{"type":"i2cscan","found":[64]}`: decimal addresses (a PCA9685 shows as 64 = 0x40; the firmware turns off its 0x70 all-call address at startup) |
 | `servo <joint> <deg>` | joint is `body_yaw`, `head_yaw`, `head_pitch` or `0`–`2`. Replies `{"type":"ack","cmd":"servo","joint":…,"deg":…,"pulse_us":…,"clamped":…}` |
 | `pulse <ch> <us>` | raw pulse (500–2500 µs) on any of the 16 channels, for calibration. Ignores joint limits |
 | `relax [joint]` | stops pulses so the servo goes limp. Relaxes every joint if no joint is given |

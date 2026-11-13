@@ -219,7 +219,7 @@ This is the same fundamental separation used in larger robotic control systems.
 | M4 | Audio input | Record microphone audio | ✅ Done. INMP441 streams 16 kHz audio to the PC with no gaps, also while the robot speaks; `tools/record.py` saves it as WAV and voice plays back clearly. Gain 18 dB |
 | M5 | Python communication | Send commands and receive telemetry | ✅ Done. `backend/` package: `Robot` class with reply matching, telemetry, audio in and out; 14 tests on a fake robot; demo and a 60 s soak on the robot with 0 lost or wrong replies |
 | M6 | Initial AI integration | Hold a conversation with coordinated expressions | ✅ Done. Local speech recognition, OpenAI replies, Piper voice, expressions; "Hey Mochi" sessions and lip sync checked on the robot |
-| M7 | Servo control | Independently command three servos | 🟡 Firmware written and flashed; waiting on PCA9685 wiring to test with real servos |
+| M7 | Servo control | Independently command three servos | 🟡 Wired; all three servos move. Direction, centering and real joint limits still to check |
 | M8 | Motion trajectories | Smooth, bounded servo movements | 🟡 Trajectory planner prototyped and tested in `sim/`; not yet ported to firmware |
 | M9 | Final AI integration | Hold a conversation with coordinated expressions and motion | ⬜ Not started |
 
@@ -228,7 +228,7 @@ This is the same fundamental separation used in larger robotic control systems.
 **Next steps**
 
 1. Decide on 240 MHz CPU, and on 16 MB flash (the chip reports 16 MB).
-2. For M7: wire the PCA9685 and servos (see `firmware/README.md`), check `i2cscan` finds the board, then command each servo.
+2. For M7: check each joint's direction, its center pulse and its real limits (see [M7 — Servo control](#m7--servo-control)).
 
 #### M2 — LCD interface
 
@@ -489,6 +489,38 @@ pip install -r backend/requirements.txt
 python3 -m pytest backend/tests
 python3 -m backend.chat /dev/ttyACM0            # "Hey Mochi!" to start, "Bye bye Mochi!" to end
 ```
+
+#### M7 — Servo control
+
+Three servos (body yaw, head yaw, head pitch) driven at 50 Hz through a PCA9685 over I2C. Each joint is clamped to its limits before any pulse is sent.
+
+**Wiring** (I2C; pins and address configurable in menuconfig → *aibot motion*):
+
+| PCA9685 pin | ESP32-S3 | Purpose |
+|---|---|---|
+| VCC | 3V3 | Logic power |
+| GND | GND | Common ground |
+| SDA | GPIO 8 | I2C data |
+| SCL | GPIO 9 | I2C clock |
+| V+ (side header pin) | — | Separate 5 V 5 A supply for the servos |
+
+- **Servo power:** feed the 5 V supply into the **V+ pin on the side header**, not the screw terminal. On this board the terminal reads 5 V but doesn't power the servo rows (likely a faulty reverse-polarity protection part). To diagnose, measure V+ to GND on a servo header row, not at the terminal. Don't power the servos from the ESP32's 5V pin. Connect the supply ground to the ESP32 ground.
+- **Polarity:** the side V+ pin skips the reverse-polarity protection, so double-check + and − before powering up. Use thick wires.
+- **Address:** 0x40 (default, no address jumpers soldered).
+- **Channels:** plug each servo in with its signal wire (usually yellow or orange) toward the PWM pin.
+
+| Joint | Channel | Limits (placeholder) |
+|---|---|---|
+| `body_yaw` | 0 | −90° to 90° |
+| `head_yaw` | 1 | −60° to 60° |
+| `head_pitch` | 2 | −20° to 30° |
+
+**Bring-up checks** (commands in `docs/CLI.md`):
+
+1. The `boot` message shows `"pca9685":true`.
+2. `i2cscan` lists `[64]` (0x40; the firmware turns off the 0x70 all-call address at startup).
+3. `pulse <channel> 1500` centers each servo; check it moves and holds.
+4. `servo <joint> <deg>` moves each joint within its limits; `relax` makes them go limp.
 
 After M9, we implement autonomous behaviors.
 

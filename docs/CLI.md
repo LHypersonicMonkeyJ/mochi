@@ -147,7 +147,7 @@ These work once a PCA9685 is wired up. Without one, every command except `i2csca
 
 | Command                  | What it does                                                                                           |
 | ------------------------ | ------------------------------------------------------------------------------------------------------ |
-| `i2cscan`              | Lists I2C devices in decimal. A PCA9685 shows as 64 (0x40), plus 112 (0x70)                            |
+| `i2cscan`              | Lists I2C devices in decimal. A PCA9685 shows as 64 (0x40); the firmware turns off its 0x70 all-call address |
 | `servo <joint> <deg>`  | Moves a joint straight to an angle, clamped to its limits. Reply includes `pulse_us` and `clamped` |
 | `pulse <channel> <us>` | Raw pulse, 500 to 2500 µs, on any of the 16 channels. For calibration; ignores joint limits           |
 | `relax [joint]`        | Stops pulses so the servo goes limp. No joint relaxes all                                              |
